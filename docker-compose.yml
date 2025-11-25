@@ -1,79 +1,45 @@
 services:
   # --------------------
-  # Rust
+  # Go API
   # --------------------
-  rust-api:
+  go-api:
     build: 
       context: .
       dockerfile: Dockerfile.api
-    container_name: rust_api
+    container_name: go_api
     restart: always
     env_file:
       - ./.env 
     ports:
-      # ホストの 8080 を API サーバーのポートにマッピング
       - "8080:8080" 
-    # API サーバーのコードが置かれているディレクトリをマウント（開発時推奨）
-    volumes:
-      - ./api:/usr/src/app
     depends_on:
-      # API サーバーは DB が立ち上がるのを待ってから起動する
       mariadb:
-        condition: service_healthy 
-      mongodb:
-        condition: service_started
+        condition: service_healthy
     environment:
-      # MariaDB
       DATABASE_URL_MARIA: "mysql://${MARIADB_USER}:${MARIADB_PASSWORD}@mariadb:3306/${MARIADB_DATABASE}"
-      # MongoDB 
-      DATABASE_URL_MONGO: "mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017"
       TZ: 'Asia/Tokyo'
+
   # --------------------
-  # MariaDB 
+  # MariaDB
   # --------------------
   mariadb:
-    image: mariadb:latest 
-    container_name: mariadb
+    image: mariadb:10.6
+    container_name: mariadb_db
     restart: always
     env_file:
       - ./.env
     environment:
-      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
-      MARIADB_DATABASE: ${MARIADB_DATABASE}
-      MARIADB_USER: ${MARIADB_USER}
-      MARIADB_PASSWORD: ${MARIADB_PASSWORD}
       TZ: 'Asia/Tokyo'
     ports:
       - "3306:3306"
     volumes:
       - mariadb_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MARIADB_ROOT_PASSWORD}"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-u", "root", "-p${MARIADB_ROOT_PASSWORD}"]
+      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
-  # --------------------
-  # MongoDB 
-  # --------------------
-  mongodb:
-    image: mongo:latest 
-    container_name: mongodb
-    restart: always
-    env_file:
-      - ./.env
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
-      TZ: 'Asia/Tokyo'
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongodb_data:/data/db
-
-# --------------------
-# データの永続化用ボリューム
-# --------------------
 volumes:
   mariadb_data:
-  mongodb_data:

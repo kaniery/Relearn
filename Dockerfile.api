@@ -1,20 +1,29 @@
-FROM rust:latest AS builder
-WORKDIR /usr/src/app
+# ----------------------------------------------------
+# ビルドステージ: アプリケーションをコンパイルする
+# ----------------------------------------------------
+FROM golang:1.21-alpine AS builder
 
-COPY api/Cargo.toml api/Cargo.lock ./
+RUN apk add --no-cache git
 
-RUN mkdir src
-RUN echo "fn main() {}" > src/main.rs
-RUN cargo build --release
+WORKDIR /app
 
-COPY api/src ./src
+COPY api/go.mod api/go.sum ./
 
-RUN rm -f target/release/deps/api
-RUN cargo build --release
+RUN go mod download
 
-FROM debian:bookworm-slim
-ENV TZ=Asia/Tokyo
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-COPY --from=builder /usr/src/app/target/release/api /usr/local/bin/api
+# ソースコードをコピー
+COPY api/. .
+RUN go build -o go_api_server ./src/main.go
 
-CMD ["/usr/local/bin/api"]
+# ----------------------------------------------------
+# 実行ステージ: 最小限のランタイム環境を作成する
+# ----------------------------------------------------
+FROM alpine:latest
+
+RUN apk add --no-cache tzdata
+
+WORKDIR /app
+
+COPY --from=builder /app/go_api_server .
+
+CMD ["./go_api_server"]
