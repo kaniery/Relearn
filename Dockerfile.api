@@ -10,8 +10,12 @@ WORKDIR /app
 COPY db/schema.sql .
 COPY api/go.mod api/go.sum ./
 
+# ★修正点 1: ソースコードを全てコピーする前にモジュールダウンロードを実行
+COPY api/. . 
 RUN go mod tidy
-COPY api/. .
+RUN go mod download
+
+# ★修正点 2: go.sum の整合性を確保した後、ビルドを実行
 RUN go build -o go_api_server ./src/main.go
 
 # ----------------------------------------------------

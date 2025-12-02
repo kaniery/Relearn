@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings" // ★追加: 文字列操作のために必要
 	"time"
 
 	_ "github.com/go-sql-driver/mysql" 
@@ -35,21 +36,46 @@ type QuestionData struct {
 func initializeDB(db *sql.DB, schemaFilePath string) error {
 	log.Println("Initializing database schema...")
 
-	// schema.sqlファイルを読み込む
+	// 1. schema.sqlファイルを読み込む
 	sqlBytes, err := ioutil.ReadFile(schemaFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to read schema file: %w", err)
 	}
 	sqlStr := string(sqlBytes)
 
-	_, err = db.Exec(sqlStr)
-	if err != nil {
-		log.Printf("Warning: Failed to execute schema SQL. Error: %v", err)
-	} else {
-		log.Println("Database schema executed successfully!")
+    // ★修正箇所: SQL文字列をセミコロンで分割し、個別に実行する
+    // MariaDBはdb.Exec()で複数のSQL文を一度に受け付けるとは限らないため
+	statements := strings.Split(sqlStr, ";")
+    
+    successCount := 0
+    
+	// 2. 各SQL文を個別に実行
+	for _, stmt := range statements {
+        // 前後の空白と改行を削除
+		stmt = strings.TrimSpace(stmt) 
+		if stmt == "" {
+			continue // 空のステートメントはスキップ
+		}
+        
+        // SQLを実行
+		_, err = db.Exec(stmt)
+		if err != nil {
+            // エラーが発生しても、次のテーブルに進む (テーブルが既に存在する場合などがあるため)
+			log.Printf("Warning: Failed to execute SQL statement [%s...]. Error: %v", stmt[:50], err)
+		} else {
+            successCount++
+        }
 	}
+    
+    if successCount > 0 {
+        log.Printf("Database schema executed successfully! (%d statements executed)", successCount)
+    } else {
+        log.Println("No SQL statements were successfully executed.")
+    }
+
 	return nil
 }
+
 
 //ユーザーをPOSTで受け取り、DBに保存するハンドラ
 func handleUserPost(db *sql.DB) http.HandlerFunc {
@@ -101,47 +127,47 @@ func handleUserPost(db *sql.DB) http.HandlerFunc {
 
 // 質問をPOSTで受け取り、DBに保存するハンドラ
 func handleQuestionPost(db *sql.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
+    return func(w http.ResponseWriter, r *http.Request) {
+        if r.Method != "POST" {
+            http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+            return
+        }
 
-		var data QuestionData
-		// JSONデータをパース
-		if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-			http.Error(w, "Invalid request body (JSON format error)", http.StatusBadRequest)
-			return
-		}
+        var data QuestionData
+        // JSONデータをパース
+        if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+            http.Error(w, "Invalid request body (JSON format error)", http.StatusBadRequest)
+            return
+        }
 
-		// データベースに挿入するためのSQLクエリ
-		query := `
+        // データベースに挿入するためのSQLクエリ
+        query := `
             INSERT INTO questions 
             (qualification_id, topic_id, author_user_id, question_data) 
             VALUES (?, ?, ?, ?)
         `
-		
-		result, err := db.Exec(query, 
-			data.QualificationID, 
-			data.TopicID, 
-			data.AuthorUserID, 
-			data.QuestionData,
-		)
+        
+        result, err := db.Exec(query, 
+            data.QualificationID, 
+            data.TopicID, 
+            data.AuthorUserID, 
+            data.QuestionData,
+        )
 
-		if err != nil {
-			log.Printf("❌ Database INSERT error: %v", err)
-			http.Error(w, "Failed to save data due to database error", http.StatusInternalServerError)
-			return
-		}
+        if err != nil {
+            log.Printf("❌ Database INSERT error: %v", err)
+            http.Error(w, "Failed to save data due to database error", http.StatusInternalServerError)
+            return
+        }
 
-		lastID, _ := result.LastInsertId()
-		w.WriteHeader(http.StatusCreated)
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"message": "Question saved successfully", 
-			"id": lastID,
-		})
-	}
+        lastID, _ := result.LastInsertId()
+        w.WriteHeader(http.StatusCreated)
+        w.Header().Set("Content-Type", "application/json")
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "message": "Question saved successfully", 
+            "id": lastID,
+        })
+    }
 }
 
 func main() {
@@ -168,22 +194,22 @@ func main() {
 	}
 	defer db.Close()
 	
-    // DBが起動するまでリトライするロジック（depends_onだけでは不十分な場合があるため）
-    log.Println("Attempting to connect to MariaDB...")
-    maxRetries := 10
-    for i := 0; i < maxRetries; i++ {
-        err = db.Ping()
-        if err == nil {
-            log.Println("✅ Successfully connected to MariaDB.")
-            break
-        }
-        log.Printf("Waiting for MariaDB... attempt %d/%d (Error: %v)", i+1, maxRetries, err)
-        time.Sleep(2 * time.Second)
-        
-        if i == maxRetries-1 {
-            log.Fatalf("❌ Failed to ping database after %d attempts: %v", maxRetries, err)
-        }
-    }
+	// DBが起動するまでリトライするロジック（depends_onだけでは不十分な場合があるため）
+	log.Println("Attempting to connect to MariaDB...")
+	maxRetries := 10
+	for i := 0; i < maxRetries; i++ {
+		err = db.Ping()
+		if err == nil {
+			log.Println("✅ Successfully connected to MariaDB.")
+			break
+		}
+		log.Printf("Waiting for MariaDB... attempt %d/%d (Error: %v)", i+1, maxRetries, err)
+		time.Sleep(2 * time.Second)
+		
+		if i == maxRetries-1 {
+			log.Fatalf("❌ Failed to ping database after %d attempts: %v", maxRetries, err)
+		}
+	}
 
 	// データベーススキーマを初期化（テーブル作成）
 	if err := initializeDB(db, schemaFilePath); err != nil {
