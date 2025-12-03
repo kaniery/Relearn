@@ -8,29 +8,13 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings" // ★追加: 文字列操作のために必要
+	"strings" 
 	"time"
-
 	_ "github.com/go-sql-driver/mysql" 
 )
 
 // データベースのスキーマファイル名
 const schemaFilePath = "schema.sql"
-
-// ユーザーデータの構造体 (JSONのパース用)
-type UserData struct {
-	Username      string `json:"username"`
-	Email         string `json:"email"`
-	PasswordHash  string `json:"password_hash"`
-}
-
-// 質問データの構造体 (JSONのパース用)
-type QuestionData struct {
-	QualificationID int    `json:"qualification_id"`
-	TopicID         int    `json:"topic_id"`
-	AuthorUserID    int    `json:"author_user_id"`
-	QuestionData    string `json:"question_data"`
-}
 
 // データベーススキーマを初期化する関数
 func initializeDB(db *sql.DB, schemaFilePath string) error {
@@ -222,7 +206,7 @@ func main() {
 	
 	//ユーザー登録エンドポイント
 	http.HandleFunc("/api/data/user", handleUserPost(db))
-	//問題登録エンドポイント (http://localhost:8080/api/data/question)
+	//問題登録エンドポイント
 	http.HandleFunc("/api/data/question", handleQuestionPost(db))
 	
 	// ヘルスチェックエンドポイント (コンテナが動作しているか確認)
